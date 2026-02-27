@@ -7,14 +7,16 @@ interface JobEntry {
   id: string;
   url: string;
   status: ScrapeProgress;
+  pdfBase64?: string;
 }
 
 interface JobListProps {
   jobs: JobEntry[];
   onRetry?: (url: string) => void;
+  onDownload?: (jobId: string) => void;
 }
 
-export function JobList({ jobs, onRetry }: JobListProps) {
+export function JobList({ jobs, onRetry, onDownload }: JobListProps) {
   if (jobs.length === 0) return null;
 
   const done = jobs.filter((j) => j.status.status === "done").length;
@@ -42,7 +44,9 @@ export function JobList({ jobs, onRetry }: JobListProps) {
             totalPages={job.status.totalPages}
             error={job.status.error}
             documentTitle={job.status.documentTitle}
+            hasPdf={!!job.pdfBase64}
             onRetry={onRetry}
+            onDownload={onDownload}
           />
         ))}
       </div>

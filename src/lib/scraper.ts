@@ -1,4 +1,4 @@
-import { chromium, Browser } from "playwright";
+import { chromium, type Browser } from "playwright-core";
 import type { PageData, ScrapeProgress } from "./types";
 
 const globalForBrowser = globalThis as unknown as { _pwBrowser: Browser | null };
@@ -6,7 +6,19 @@ globalForBrowser._pwBrowser = globalForBrowser._pwBrowser ?? null;
 
 async function getBrowser(): Promise<Browser> {
   if (!globalForBrowser._pwBrowser || !globalForBrowser._pwBrowser.isConnected()) {
-    globalForBrowser._pwBrowser = await chromium.launch({ headless: true });
+    const isVercel = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
+    if (isVercel) {
+      const chromiumModule = await import("@sparticuz/chromium");
+      const executablePath = await chromiumModule.default.executablePath();
+      globalForBrowser._pwBrowser = await chromium.launch({
+        args: chromiumModule.default.args,
+        executablePath,
+        headless: true,
+      });
+    } else {
+      globalForBrowser._pwBrowser = await chromium.launch({ headless: true });
+    }
   }
   return globalForBrowser._pwBrowser;
 }

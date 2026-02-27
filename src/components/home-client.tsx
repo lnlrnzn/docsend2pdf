@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { ScrapeForm } from "@/components/scrape-form";
 import { JobList } from "@/components/job-list";
@@ -11,6 +11,7 @@ interface JobEntry {
   id: string;
   url: string;
   status: ScrapeProgress;
+  pdfBase64?: string;
 }
 
 function Logo() {
@@ -33,48 +34,20 @@ function Logo() {
   );
 }
 
+let jobCounter = 0;
+
 export function HomeClient() {
   const [jobs, setJobs] = useState<JobEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
-  const eventSourcesRef = useRef<Map<string, EventSource>>(new Map());
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    const sources = eventSourcesRef.current;
     return () => {
-      sources.forEach((es) => es.close());
-      sources.clear();
+      abortRef.current?.abort();
     };
   }, []);
-
-  const updateJob = useCallback((jobId: string, progress: ScrapeProgress) => {
-    setJobs((prev) =>
-      prev.map((j) => (j.id === jobId ? { ...j, status: progress } : j))
-    );
-  }, []);
-
-  function subscribeToJob(jobId: string) {
-    const eventSource = new EventSource(`/api/status/${jobId}`);
-    eventSourcesRef.current.set(jobId, eventSource);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const progress: ScrapeProgress = JSON.parse(event.data);
-        updateJob(jobId, progress);
-        if (progress.status === "done" || progress.status === "error") {
-          eventSource.close();
-          eventSourcesRef.current.delete(jobId);
-        }
-      } catch {
-        // ignore parse errors
-      }
-    };
-    eventSource.onerror = () => {
-      eventSource.close();
-      eventSourcesRef.current.delete(jobId);
-    };
-  }
 
   async function handleSubmit(data: {
     urls: string[];
@@ -85,11 +58,33 @@ export function HomeClient() {
     setError(null);
     setSubmitSuccess(false);
 
+    const jobId = `job-${++jobCounter}`;
+    const url = data.urls[0];
+
+    // Add job entry immediately
+    setJobs((prev) => [
+      {
+        id: jobId,
+        url,
+        status: {
+          jobId,
+          status: "queued",
+          currentPage: 0,
+          totalPages: 0,
+        },
+      },
+      ...prev,
+    ]);
+
+    const abort = new AbortController();
+    abortRef.current = abort;
+
     try {
       const res = await fetch("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
+        signal: abort.signal,
       });
 
       if (!res.ok) {
@@ -97,36 +92,130 @@ export function HomeClient() {
         throw new Error(body.error || "Request failed");
       }
 
-      const result = await res.json();
-
-      const newJobs: JobEntry[] = result.jobs.map(
-        (j: { id: string; url: string }) => ({
-          id: j.id,
-          url: j.url,
-          status: {
-            jobId: j.id,
-            status: "queued" as const,
-            currentPage: 0,
-            totalPages: 0,
-          },
-        })
-      );
-
-      setJobs((prev) => [...newJobs, ...prev]);
       setSubmitSuccess(true);
 
-      for (const job of newJobs) {
-        subscribeToJob(job.id);
+      // Read SSE stream
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE events from buffer
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7);
+          } else if (line.startsWith("data: ")) {
+            const jsonStr = line.slice(6);
+            try {
+              const payload = JSON.parse(jsonStr);
+
+              if (eventType === "progress") {
+                setJobs((prev) =>
+                  prev.map((j) =>
+                    j.id === jobId
+                      ? { ...j, status: { jobId, ...payload } }
+                      : j
+                  )
+                );
+              } else if (eventType === "done") {
+                setJobs((prev) =>
+                  prev.map((j) =>
+                    j.id === jobId
+                      ? {
+                          ...j,
+                          pdfBase64: payload.pdf,
+                          status: {
+                            jobId,
+                            status: "done",
+                            currentPage: j.status.totalPages,
+                            totalPages: j.status.totalPages,
+                            documentTitle: j.status.documentTitle,
+                          },
+                        }
+                      : j
+                  )
+                );
+              } else if (eventType === "error") {
+                setJobs((prev) =>
+                  prev.map((j) =>
+                    j.id === jobId
+                      ? {
+                          ...j,
+                          status: {
+                            jobId,
+                            status: "error",
+                            currentPage: 0,
+                            totalPages: 0,
+                            error: payload.error,
+                          },
+                        }
+                      : j
+                  )
+                );
+              }
+            } catch {
+              // ignore parse errors
+            }
+            eventType = "";
+          }
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      if ((err as Error).name !== "AbortError") {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        setError(msg);
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.id === jobId
+              ? {
+                  ...j,
+                  status: {
+                    jobId,
+                    status: "error",
+                    currentPage: 0,
+                    totalPages: 0,
+                    error: msg,
+                  },
+                }
+              : j
+          )
+        );
+      }
     } finally {
       setIsLoading(false);
+      abortRef.current = null;
     }
   }
 
   function handleRetry(url: string) {
     handleSubmit({ urls: [url] });
+  }
+
+  function handleDownload(jobId: string) {
+    const job = jobs.find((j) => j.id === jobId);
+    if (!job?.pdfBase64) return;
+
+    const bytes = Uint8Array.from(atob(job.pdfBase64), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = job.status.documentTitle
+      ? `${job.status.documentTitle.replace(/[^a-zA-Z0-9_\-. ]/g, "_")}.pdf`
+      : `docsend-${jobId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
   }
 
   return (
@@ -163,7 +252,7 @@ export function HomeClient() {
           )}
 
           <section aria-label="Conversion jobs">
-            <JobList jobs={jobs} onRetry={handleRetry} />
+            <JobList jobs={jobs} onRetry={handleRetry} onDownload={handleDownload} />
           </section>
         </main>
 
