@@ -1,28 +1,22 @@
 import { chromium, type Browser } from "playwright-core";
 import type { PageData, ScrapeProgress } from "./types";
 
-const globalForBrowser = globalThis as unknown as { _pwBrowser: Browser | null };
-globalForBrowser._pwBrowser = globalForBrowser._pwBrowser ?? null;
+async function launchBrowser(): Promise<Browser> {
+  const isVercel = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
 
-async function getBrowser(): Promise<Browser> {
-  if (!globalForBrowser._pwBrowser || !globalForBrowser._pwBrowser.isConnected()) {
-    const isVercel = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
-
-    if (isVercel) {
-      const chromiumModule = await import("@sparticuz/chromium-min");
-      const executablePath = await chromiumModule.default.executablePath(
-        "https://github.com/Sparticuz/chromium/releases/download/v143.0.0/chromium-v143.0.0-pack.x64.tar"
-      );
-      globalForBrowser._pwBrowser = await chromium.launch({
-        args: chromiumModule.default.args,
-        executablePath,
-        headless: true,
-      });
-    } else {
-      globalForBrowser._pwBrowser = await chromium.launch({ headless: true });
-    }
+  if (isVercel) {
+    const chromiumModule = await import("@sparticuz/chromium-min");
+    const executablePath = await chromiumModule.default.executablePath(
+      "https://github.com/Sparticuz/chromium/releases/download/v143.0.0/chromium-v143.0.0-pack.x64.tar"
+    );
+    return chromium.launch({
+      args: chromiumModule.default.args,
+      executablePath,
+      headless: true,
+    });
   }
-  return globalForBrowser._pwBrowser;
+
+  return chromium.launch({ headless: true });
 }
 
 function isValidDocSendUrl(url: string): boolean {
@@ -44,7 +38,7 @@ export async function scrapeDocSend(
   }
 
   const navigateUrl = normalizeUrl(url);
-  const browser = await getBrowser();
+  const browser = await launchBrowser();
   const context = await browser.newContext({
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -169,6 +163,7 @@ export async function scrapeDocSend(
     return pdfBuffer;
   } finally {
     await context.close();
+    await browser.close();
   }
 }
 
@@ -368,8 +363,5 @@ async function downloadImage(
 }
 
 export async function closeBrowser() {
-  if (globalForBrowser._pwBrowser) {
-    await globalForBrowser._pwBrowser.close();
-    globalForBrowser._pwBrowser = null;
-  }
+  // No-op: browser is now created and closed per-request
 }
