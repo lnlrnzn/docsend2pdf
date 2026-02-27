@@ -171,6 +171,9 @@ async function handleAuth(
   page: import("playwright").Page,
   options: { email?: string; passcode?: string }
 ) {
+  // Passcode-Selektor: DocSend nutzt type="text" mit name="link_auth_form[passcode]"
+  const passcodeSelector = 'input[name="link_auth_form[passcode]"]';
+
   // Prüfe ob E-Mail-Gate vorhanden
   const emailInput = page.locator('input[name="link_auth_form[email]"]');
   const emailVisible = await emailInput.isVisible().catch(() => false);
@@ -183,6 +186,14 @@ async function handleAuth(
     }
 
     await emailInput.fill(options.email);
+
+    // Prüfe ob Passcode-Feld auf derselben Seite ist (Email+Passcode kombiniert)
+    const passcodeInput = page.locator(passcodeSelector);
+    const passcodeOnSamePage = await passcodeInput.isVisible().catch(() => false);
+
+    if (passcodeOnSamePage && options.passcode) {
+      await passcodeInput.fill(options.passcode);
+    }
 
     // Klick + auf Navigation/Reload warten — spezifisch den Submit-Button im Auth-Formular
     const submitBtn = page.locator('#new_link_auth_form button[type="submit"]');
@@ -198,6 +209,8 @@ async function handleAuth(
         // Oder Fehlermeldung sichtbar
         const body = document.body.innerText;
         if (/gültige E-Mail|valid email|bestätigen|verify/i.test(body)) return true;
+        // Oder Passcode-Fehler (bedeutet Auth-Formular wurde verarbeitet)
+        if (/can't be blank|is not correct|passcode/i.test(body)) return true;
         return false;
       },
       { timeout: 10000 }
@@ -242,8 +255,8 @@ async function handleAuth(
     }
   }
 
-  // Prüfe ob Passwort-Gate vorhanden
-  const passwordInput = page.locator('input[type="password"]').first();
+  // Prüfe ob Passwort/Passcode-Gate separat vorhanden (nach Email-Gate)
+  const passwordInput = page.locator(`input[type="password"], ${passcodeSelector}`).first();
   const passwordVisible = await passwordInput.isVisible().catch(() => false);
 
   if (passwordVisible) {
@@ -258,10 +271,11 @@ async function handleAuth(
       page.waitForNavigation({ waitUntil: "networkidle", timeout: 15000 }).catch(() => {}),
       pwSubmitBtn.click(),
     ]);
-    // Warte bis Passwort-Input verschwindet (Auth erfolgreich)
+    // Warte bis Auth-Form verschwindet
     await page.waitForFunction(
       () => {
-        const pwInput = document.querySelector('input[type="password"]');
+        const pwInput = document.querySelector('input[type="password"]') ||
+          document.querySelector('input[name="link_auth_form[passcode]"]');
         return !pwInput || (pwInput as HTMLElement).offsetParent === null;
       },
       { timeout: 10000 }
