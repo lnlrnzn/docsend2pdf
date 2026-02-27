@@ -1,0 +1,46 @@
+# DocSend to PDF
+
+> Convert DocSend documents to downloadable PDF files.
+
+DocSend2PDF is a free online tool that converts DocSend presentations and documents into PDF files. It works by loading each page of a DocSend document in a headless browser, capturing the page images, and assembling them into a single PDF.
+
+## Features
+
+- Convert any public DocSend link to PDF
+- Supports email-gated documents (provide your email)
+- Supports passcode-protected documents
+- No data stored — PDFs are generated on-the-fly and deleted after download
+- MCP Server available for AI assistants (Claude, Cursor, Copilot, etc.)
+
+## How to Use
+
+1. Paste a DocSend URL (e.g. https://docsend.com/view/abc123)
+2. Optionally enter email and passcode if the document requires them
+3. Click "Convert to PDF"
+4. Download the generated PDF
+
+## MCP Server
+
+Install the MCP server to convert DocSend documents from any AI assistant:
+
+```
+npm install -g docsend-scraper-mcp
+```
+
+Add to your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "docsend-scraper": {
+      "command": "node",
+      "args": ["docsend-scraper-mcp"]
+    }
+  }
+}
+```
+
+## Links
+
+- Website: https://docsend2pdf.app
+- MCP Setup Guide: https://docsend2pdf.app/mcp

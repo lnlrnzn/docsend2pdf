@@ -1,0 +1,28 @@
+{
+  "name": "p-docsend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "16.1.6",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "playwright": "^1.52.0",
+    "pdf-lib": "^1.17.1",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.8.0",
+    "@tailwindcss/postcss": "^4.1.0",
+    "tailwindcss": "^4.1.0"
+  }
+}
