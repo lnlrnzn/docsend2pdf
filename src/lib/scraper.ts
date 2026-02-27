@@ -9,8 +9,10 @@ async function getBrowser(): Promise<Browser> {
     const isVercel = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
 
     if (isVercel) {
-      const chromiumModule = await import("@sparticuz/chromium");
-      const executablePath = await chromiumModule.default.executablePath();
+      const chromiumModule = await import("@sparticuz/chromium-min");
+      const executablePath = await chromiumModule.default.executablePath(
+        "https://github.com/Sparticuz/chromium/releases/download/v143.0.0/chromium-v143.0.0-pack.x64.tar"
+      );
       globalForBrowser._pwBrowser = await chromium.launch({
         args: chromiumModule.default.args,
         executablePath,
