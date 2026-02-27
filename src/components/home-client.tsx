@@ -98,6 +98,7 @@ export function HomeClient() {
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      const pdfChunks: string[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -126,13 +127,16 @@ export function HomeClient() {
                       : j
                   )
                 );
+              } else if (eventType === "pdf-chunk") {
+                pdfChunks[payload.index] = payload.data;
               } else if (eventType === "done") {
+                const fullBase64 = pdfChunks.join("");
                 setJobs((prev) =>
                   prev.map((j) =>
                     j.id === jobId
                       ? {
                           ...j,
-                          pdfBase64: payload.pdf,
+                          pdfBase64: fullBase64,
                           status: {
                             jobId,
                             status: "done",
